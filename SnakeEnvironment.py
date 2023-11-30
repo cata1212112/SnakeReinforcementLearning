@@ -1,8 +1,12 @@
+import numpy as np
+
 from imports import *
+
+FPS = 20
 
 
 class SnakeEnv:
-    def __init__(self, frame_x=720, frame_y=480, render=False):
+    def __init__(self, frame_x=256, frame_y=256, render=False):
         self.change_to = None
         self.direction = None
         self.score = None
@@ -13,8 +17,13 @@ class SnakeEnv:
         self.game_window = None
         self.frame_X = frame_x
         self.frame_Y = frame_y
-        self.block_size = 10
+        self.block_size = 16
         self.render = render
+        self.action_space_size = 4
+        self.actions = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+        self.action_dic = {'UP': 0, 'DOWN': 1, 'LEFT': 2, 'RIGHT': 3}
+        self.no_eat = 0
+        self.resize = (50, 50)
         self.reset()
 
     def _generate_food_pos(self):
@@ -45,19 +54,33 @@ class SnakeEnv:
             pygame.display.set_caption('SNAKE')
             self.game_window = pygame.display.set_mode((self.frame_X, self.frame_Y))
 
+        return self.get_image()
+
     def step(self, action):
+        before = (self.snake_pos[0], self.snake_pos[1])
         self._move(action)
+        self.no_eat += 1
 
         self.snake_body.insert(0, list(self.snake_pos))
-
-        reward = -1
+        reward = 0
 
         if self.snake_pos[0] == self.food_pos[0] and self.snake_pos[1] == self.food_pos[1]:
             self.score += 1
-            reward = 10
+            self.no_eat = 0
+            reward = 30
             self.food_pos = self._generate_food_pos()
         else:
             self.snake_body.pop()
+
+        if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_X - self.block_size:
+            return True, self._end_game(), -15, self.get_image()
+
+        if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_Y - self.block_size:
+            return True, self._end_game(), -15, self.get_image()
+
+        for block in self.snake_body[1:]:
+            if self.snake_pos[0] == block[0] and self.snake_pos[1] == block[1]:
+                return True, self._end_game(), -15, self.get_image()
 
         if self.render:
             self.game_window.fill(pygame.Color(0, 0, 0))
@@ -68,20 +91,20 @@ class SnakeEnv:
             pygame.draw.rect(self.game_window, pygame.Color(255, 0, 0),
                              pygame.Rect(self.food_pos[0], self.food_pos[1], self.block_size, self.block_size))
 
+            pygame.event.get()
             pygame.display.update()
-            self.fps_controller.tick(1)
+            self.fps_controller.tick(FPS)
 
-        if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_X - self.block_size:
-            return True, self._end_game(), -10
+        if reward == 0:
+            reward = 30 * np.log(len(self.snake_body) + np.sqrt(
+                (before[0] - self.food_pos[0]) ** 2 + (before[1] - self.food_pos[1]) ** 2)) / np.log(
+                len(self.snake_body) + np.sqrt(
+                    (self.snake_pos[0] - self.food_pos[0]) ** 2 + (self.snake_pos[1] - self.food_pos[1]) ** 2))
 
-        if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_Y - self.block_size:
-            return True, self._end_game(), -10
+            if self.no_eat > 10:
+                reward += - 20 / len(self.snake_body)
 
-        for block in self.snake_body[1:]:
-            if self.snake_pos[0] == block[0] and self.snake_pos[1] == block[1]:
-                return True, self._end_game(), -10
-
-        return False, self.score, reward
+        return False, self.score, reward, self.get_image()
 
     def _move(self, action):
         if action == 'UP' and self.direction != 'DOWN':
@@ -101,3 +124,18 @@ class SnakeEnv:
             self.snake_pos[0] -= self.block_size
         if self.direction == 'RIGHT':
             self.snake_pos[0] += self.block_size
+
+    def get_image(self):
+        img = np.zeros((self.frame_Y, self.frame_X, 3), dtype=np.uint8)
+        for pos in self.snake_body:
+            img[pos[1]:pos[1] + self.block_size, pos[0]:pos[0] + self.block_size, :] = 255
+
+        img[self.food_pos[1]:self.food_pos[1] + self.block_size, self.food_pos[0]:self.food_pos[0] + self.block_size,
+        :] = np.array([0, 0, 255])
+
+        img = cv.resize(img, self.resize, interpolation=cv.INTER_AREA)
+        img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        return img
+
+    def sample_action(self):
+        return np.random.choice(self.actions)

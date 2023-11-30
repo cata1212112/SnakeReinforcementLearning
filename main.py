@@ -1,6 +1,13 @@
 from SnakeEnvironment import *
+from Agent import *
 
-a = SnakeEnv(render=True)
-a.step('UP')
-a.step('RIGHT')
-a.step('UP')
+# torch.autograd.set_detect_anomaly(True)
+a = SnakeEnv(render=False)
+
+agent = Agent(a)
+agent.learn()
+
+# a = SnakeEnv(render=True)
+#
+# agent = Agent(a)
+# agent.play()
